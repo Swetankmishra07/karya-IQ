@@ -1,0 +1,63 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { fileURLToPath, URL } from 'node:url';
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
+  server: {
+    port: 5173,
+    proxy: {
+      '/auth': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/tasks': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/projects': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/teams': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/users': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/notifications': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/comments': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/ai': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/attachments': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/health': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://127.0.0.1:8000',
+        ws: true,
+        changeOrigin: true,
+      },
+    },
+  },
+});
