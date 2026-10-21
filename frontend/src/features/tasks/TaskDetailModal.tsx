@@ -27,6 +27,7 @@ import { AttachmentList } from '@/features/attachments/AttachmentList';
 import { AIAssistantDrawer } from '@/features/ai/AIAssistantDrawer';
 import { formatDateTime } from '@/utils/formatters';
 import { TaskPriority, TaskResponse, TaskStatus, TaskUpdate } from '@/types';
+import { extractApiErrorMessage } from '@/utils/apiErrors';
 
 interface TaskDetailModalProps {
   taskId: number | null;
@@ -101,8 +102,8 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       success('Task updated');
     },
     onError: (err: any) => {
-      const msg = err.response?.data?.detail || 'Failed to update task';
-      toastError('Update Failed', typeof msg === 'string' ? msg : JSON.stringify(msg));
+      const msg = extractApiErrorMessage(err, 'Failed to update task');
+      toastError('Update Failed', msg);
     },
   });
 
@@ -118,7 +119,8 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       success('Task deleted successfully');
     },
     onError: (err: any) => {
-      toastError('Delete Failed', err.response?.data?.detail || 'Could not delete task');
+      const msg = extractApiErrorMessage(err, 'Could not delete task');
+      toastError('Delete Failed', msg);
     },
   });
 
@@ -374,11 +376,11 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 options={[
                   { value: '', label: 'Unassigned' },
                   ...(isManagerOrAdmin
-                    ? users.map((u) => ({
+                    ? (Array.isArray(users) ? users : []).map((u) => ({
                         value: u.id,
                         label: `${u.username} (${u.email})`,
                       }))
-                    : projectMembers.map((m) => ({
+                    : (Array.isArray(projectMembers) ? projectMembers : []).map((m) => ({
                         value: m.user_id,
                         label: `Member #${m.user_id}`,
                       }))),
@@ -401,7 +403,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 }
                 options={[
                   { value: '', label: 'No Project (Unscoped)' },
-                  ...projects.map((p) => ({ value: p.id, label: p.name })),
+                  ...(Array.isArray(projects) ? projects : []).map((p) => ({ value: p.id, label: p.name })),
                 ]}
               />
             </div>

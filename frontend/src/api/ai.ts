@@ -24,4 +24,15 @@ export const aiApi = {
     );
     return response.data;
   },
+
+  getStatus: async (): Promise<{
+    enabled: boolean;
+    provider: string;
+    configured: boolean;
+    model: string | null;
+    missing_settings: string[];
+  }> => {
+    const response = await apiClient.get('/ai/status');
+    return response.data;
+  },
 };

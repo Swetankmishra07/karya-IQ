@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/Textarea';
 import { Select } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { TaskCreate, TaskPriority, TaskStatus } from '@/types';
+import { extractApiErrorMessage } from '@/utils/apiErrors';
 
 interface TaskCreateModalProps {
   isOpen: boolean;
@@ -90,8 +91,8 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       onClose();
     },
     onError: (err: any) => {
-      const msg = err.response?.data?.detail || 'Failed to create task';
-      toastError('Creation Failed', typeof msg === 'string' ? msg : JSON.stringify(msg));
+      const msg = extractApiErrorMessage(err, 'Failed to create task');
+      toastError('Creation Failed', msg);
     },
   });
 
@@ -169,7 +170,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             label="Project"
             options={[
               { value: '', label: 'No Project (Unscoped)' },
-              ...projects.map((p) => ({ value: p.id, label: p.name })),
+              ...(Array.isArray(projects) ? projects : []).map((p) => ({ value: p.id, label: p.name })),
             ]}
             {...register('project_id')}
           />
@@ -179,11 +180,11 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             options={[
               { value: '', label: 'Unassigned' },
               ...(isManagerOrAdmin
-                ? users.map((u) => ({
+                ? (Array.isArray(users) ? users : []).map((u) => ({
                     value: u.id,
                     label: `${u.username} (${u.email})`,
                   }))
-                : projectMembers.map((m) => ({
+                : (Array.isArray(projectMembers) ? projectMembers : []).map((m) => ({
                     value: m.user_id,
                     label: `Member #${m.user_id} (${m.role})`,
                   }))),

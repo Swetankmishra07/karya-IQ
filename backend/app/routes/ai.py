@@ -2,8 +2,10 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.database.database import get_db
 from app.database.models import ActivityLog, Comment, User
 from app.dependencies.authorization import require_member
@@ -14,7 +16,17 @@ from app.schemas.ai import (
     AITaskCreateResponse,
 )
 from app.schemas.task import TaskCreate
-from app.services.ai_service import AIConfigurationError, AIProviderError, AIService
+from app.services.ai_service import (
+    AIAuthenticationError,
+    AIConfigurationError,
+    AIModelNotFoundError,
+    AIProviderError,
+    AIQuotaError,
+    AIResponseFormatError,
+    AIService,
+    AITimeoutError,
+    _is_placeholder,
+)
 from app.services.task_service import TaskService
 
 
@@ -24,8 +36,40 @@ ai_service = AIService()
 
 def _ai_error(exc: Exception) -> HTTPException:
     if isinstance(exc, AIConfigurationError):
-        return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI features are not configured.")
+        return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    if isinstance(exc, AIAuthenticationError):
+        return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    if isinstance(exc, AIQuotaError):
+        return HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc))
+    if isinstance(exc, AITimeoutError):
+        return HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc))
+    if isinstance(exc, (AIResponseFormatError, AIModelNotFoundError, AIProviderError)):
+        return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    if isinstance(exc, HTTPException):
+        return exc
     return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="AI provider is unavailable or returned invalid data.")
+
+
+def _parse_deadline(val: Any) -> datetime | None:
+    if not val:
+        return None
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, str):
+        cleaned = val.strip()
+        if not cleaned or cleaned.lower() in {"null", "none", "not specified"}:
+            return None
+        # Try ISO 8601
+        try:
+            return datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+        # Try YYYY-MM-DD
+        try:
+            return datetime.strptime(cleaned, "%Y-%m-%d")
+        except ValueError:
+            pass
+    return None
 
 
 def _task_context(task, db: Session) -> dict[str, Any]:
@@ -48,6 +92,25 @@ def _task_context(task, db: Session) -> dict[str, Any]:
     }
 
 
+@router.get("/status", status_code=status.HTTP_200_OK)
+def get_ai_status(current_user: User = Depends(require_member)):
+    """Safe diagnostic endpoint reporting AI configuration status without exposing secrets."""
+    missing = []
+    if not settings.AI_API_KEY or _is_placeholder(settings.AI_API_KEY):
+        missing.append("AI_API_KEY")
+    if not settings.AI_API_URL or not settings.AI_API_URL.strip():
+        missing.append("AI_API_URL")
+    if not settings.AI_MODEL or _is_placeholder(settings.AI_MODEL):
+        missing.append("AI_MODEL")
+    return {
+        "enabled": bool(settings.AI_ENABLED),
+        "provider": settings.AI_PROVIDER,
+        "configured": bool(settings.AI_ENABLED and not missing and settings.AI_PROVIDER == "openai_compatible"),
+        "model": settings.AI_MODEL if settings.AI_ENABLED else None,
+        "missing_settings": missing if settings.AI_ENABLED else [],
+    }
+
+
 @router.post("/tasks/from-text", response_model=AITaskCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_task_from_text(
     request: AITaskCreateRequest,
@@ -56,18 +119,25 @@ def create_task_from_text(
 ):
     try:
         draft = ai_service.create_task(request.prompt)
+        deadline_dt = _parse_deadline(draft.deadline)
+
         task_data = TaskCreate(
             title=draft.title,
             description=draft.description,
             status=draft.status,
             priority=draft.priority,
-            deadline=draft.deadline,
-            assignee_id=request.assignee_id if request.assignee_id is not None else draft.assignee_id,
-            project_id=request.project_id if request.project_id is not None else draft.project_id,
+            deadline=deadline_dt,
+            assignee_id=request.assignee_id,
+            project_id=request.project_id,
         )
         return TaskService.create_task(task_data, current_user, db)
     except (AIConfigurationError, AIProviderError) as exc:
         raise _ai_error(exc) from exc
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Invalid task draft generated by AI: {exc}",
+        ) from exc
 
 
 @router.post("/tasks/{task_id}/summary", response_model=AISummaryResponse)

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { PriorityBadge } from '@/features/tasks/PriorityBadge';
 import { StatusBadge } from '@/features/tasks/StatusBadge';
 import { TaskResponse } from '@/types';
+import { extractApiErrorMessage, isAiNotConfiguredError } from '@/utils/apiErrors';
 
 interface AITaskCreateModalProps {
   isOpen: boolean;
@@ -50,13 +51,11 @@ export const AITaskCreateModal: React.FC<AITaskCreateModalProps> = ({
       success('Task created with AI', `"${data.title}" was generated and saved.`);
     },
     onError: (err: any) => {
-      if (err.response?.status === 503) {
-        setConfigError(
-          'AI features are not enabled on the backend server (AI_ENABLED=false in backend .env). You can create the task manually instead.'
-        );
+      const errorMsg = extractApiErrorMessage(err, 'AI task generation failed');
+      if (isAiNotConfiguredError(err)) {
+        setConfigError(errorMsg);
       } else {
-        const detail = err.response?.data?.detail || 'AI task generation failed';
-        toastError('AI Error', typeof detail === 'string' ? detail : 'Provider unavailable');
+        toastError('AI Error', errorMsg);
       }
     },
   });
@@ -198,7 +197,7 @@ export const AITaskCreateModal: React.FC<AITaskCreateModalProps> = ({
                 onChange={(e) => setProjectId(e.target.value)}
                 options={[
                   { value: '', label: 'No Project (Unscoped)' },
-                  ...projects.map((p) => ({ value: p.id, label: p.name })),
+                  ...(Array.isArray(projects) ? projects : []).map((p) => ({ value: p.id, label: p.name })),
                 ]}
               />
 
